@@ -42,7 +42,7 @@ writeFileSync(
 
 const files = [];
 function collectFiles(directory, relative = '') {
-  for (const name of readdirSync(directory)) {
+  for (const name of readdirSync(directory).sort()) {
     const path = join(directory, name);
     const file = relative ? join(relative, name) : name;
     if (statSync(path).isDirectory()) collectFiles(path, file);
@@ -56,7 +56,6 @@ const manifest = {
   files,
   totalBytes,
   screenshots: { count: imageFiles.length, bytes: imageFiles.reduce((total, file) => total + file.bytes, 0) },
-  generatedAt: new Date().toISOString(),
 };
 writeFileSync(join(out, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
 console.log(`Manifest: ${files.length} files, ${totalBytes} bytes`);
