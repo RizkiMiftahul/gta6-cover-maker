@@ -34,9 +34,9 @@ function gradedPhoto(photo, grade) {
       const gray=l*255;
       r=gray+(r-gray)*1.35;g=gray+(g-gray)*1.35;b=gray+(b-gray)*1.35;
       const sky=Math.pow(Math.max(0,1-y/(layer.height*.7)),1.3)*(.3+.7*l)*skin;
-      r+=58*sky+28*light*skin-28*shadow;
-      g+=-37*sky+12*light+17*shadow;
-      b+=40*sky-28*light*skin+29*shadow;
+      r+=58*sky+28*light*skin-28*shadow+5*shadow;
+      g+=-37*sky+12*light+17*shadow-5*shadow;
+      b+=40*sky-28*light*skin+29*shadow+5*shadow;
       // Magenta high sky transitions into orange lower down.
       const horizon=sky*y/layer.height*2;
       r+=46*horizon;g+=25*horizon;b-=65*horizon;
@@ -108,7 +108,7 @@ export function drawCover(canvas, state) {
   return rects;
 }
 function drawWholeFinish(ctx,w,h,enabled){
-  const edge=ctx.createRadialGradient(w*.5,h*.44,Math.min(w,h)*.24,w*.5,h*.5,Math.max(w,h)*.72);edge.addColorStop(0,'rgba(0,0,0,0)');edge.addColorStop(1,'rgba(0,0,0,.57)');ctx.fillStyle=edge;ctx.fillRect(0,0,w,h);
+  const edge=ctx.createRadialGradient(w*.5,h*.44,Math.min(w,h)*.24,w*.5,h*.5,Math.max(w,h)*.72);edge.addColorStop(0,'rgba(0,0,0,0)');edge.addColorStop(1,'rgba(0,0,0,.54)');ctx.fillStyle=edge;ctx.fillRect(0,0,w,h);
   if(!enabled)return;
   ctx.save();ctx.globalAlpha=.12;const step=Math.max(7,Math.round(Math.min(w,h)/125));ctx.fillStyle='#fff';
   for(let y=0;y<h;y+=step)for(let x=0;x<w;x+=step){if(((x/step|0)+(y/step|0))%2===0){ctx.beginPath();ctx.arc(x,y,Math.max(1,step*.12),0,Math.PI*2);ctx.fill();}}

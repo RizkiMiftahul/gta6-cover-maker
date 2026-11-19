@@ -11,7 +11,7 @@
 // Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for /output:
 //   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
 
-import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildDossier } from './vendor/makefun-app.ts';
@@ -38,3 +38,25 @@ writeFileSync(
     app_path_max_bytes: 1000,
   }),
 );
+
+
+const files = [];
+function collectFiles(directory, relative = '') {
+  for (const name of readdirSync(directory)) {
+    const path = join(directory, name);
+    const file = relative ? join(relative, name) : name;
+    if (statSync(path).isDirectory()) collectFiles(path, file);
+    else if (file !== 'manifest.json') files.push({ path: file, bytes: statSync(path).size });
+  }
+}
+collectFiles(out);
+const totalBytes = files.reduce((total, file) => total + file.bytes, 0);
+const imageFiles = files.filter(file => file.path.startsWith('screenshots/') && /\.(avif|gif|jpe?g|png|webp)$/i.test(file.path));
+const manifest = {
+  files,
+  totalBytes,
+  screenshots: { count: imageFiles.length, bytes: imageFiles.reduce((total, file) => total + file.bytes, 0) },
+  generatedAt: new Date().toISOString(),
+};
+writeFileSync(join(out, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
+console.log(`Manifest: ${files.length} files, ${totalBytes} bytes`);
