@@ -11,10 +11,62 @@ export const GRADES = [
   { id: 'noir', label: 'Palm Noir', swatch: '#d1d0d2' },
   { id: 'golden', label: 'Golden Hour', swatch: '#efbd62' },
 ];
-export const GRADE_FILTERS = {
-  sunset: 'saturate(1.18) contrast(1.05)', neon: 'saturate(1.55) contrast(1.25) hue-rotate(12deg)',
-  noir: 'grayscale(1) contrast(1.5)', golden: 'sepia(.32) saturate(1.18) brightness(1.08)',
-};
+// Cache the expensive pixel treatment; panning, zooming and exporting reuse it.
+const gradeCache = new WeakMap();
+const clamp = value => Math.max(0, Math.min(255, value));
+function gradedPhoto(photo, grade) {
+  let cached=gradeCache.get(photo);
+  if(!cached){cached=new Map();gradeCache.set(photo,cached);}
+  if(cached.has(grade))return cached.get(grade);
+  const layer=document.createElement('canvas');
+  const scale=Math.min(1,1600/Math.max(photo.naturalWidth,photo.naturalHeight));
+  layer.width=Math.round(photo.naturalWidth*scale);layer.height=Math.round(photo.naturalHeight*scale);
+  const context=layer.getContext('2d');context.drawImage(photo,0,0,layer.width,layer.height);
+  const pixels=context.getImageData(0,0,layer.width,layer.height),data=pixels.data;
+  for(let i=0;i<data.length;i+=4){
+    let r=data[i],g=data[i+1],b=data[i+2];
+    const l=(.2126*r+.7152*g+.0722*b)/255;
+    const shadow=Math.pow(1-l,2),light=l*l;
+    // Reduce chromatic pushes on warm midtones to retain plausible faces.
+    const skin=r>g&&g>b&&r-b>18&&l>.18&&l<.88 ? .38 : 1;
+    const x=(i/4)%layer.width,y=Math.floor(i/4/layer.width);
+    if(grade==='sunset'){
+      const gray=l*255;
+      r=gray+(r-gray)*1.35;g=gray+(g-gray)*1.35;b=gray+(b-gray)*1.35;
+      const sky=Math.pow(Math.max(0,1-y/(layer.height*.7)),1.3)*(.3+.7*l)*skin;
+      r+=58*sky+28*light*skin-28*shadow;
+      g+=-37*sky+12*light+17*shadow;
+      b+=40*sky-28*light*skin+29*shadow;
+      // Magenta high sky transitions into orange lower down.
+      const horizon=sky*y/layer.height*2;
+      r+=46*horizon;g+=25*horizon;b-=65*horizon;
+      const dot=((x%7)-3)**2+((y%7)-3)**2<2 ? shadow*15 : 0;
+      r-=dot;g-=dot;b-=dot;
+    }else if(grade==='neon'){
+      const contrast=value=>255*(.5+Math.tanh((value/255-.5)*1.65)/ (2*Math.tanh(.825)));
+      r=contrast(r);g=contrast(g);b=contrast(b);
+      const dark=shadow*Math.min(1,l*5); // Preserve true blacks beneath the cyan shadows.
+      r+=(-32*dark+45*light)*skin;
+      g+=(32*dark-28*light)*skin;
+      b+=(49*dark+35*light)*skin;
+    }else if(grade==='golden'){
+      const curve=value=>255/(1+Math.exp(-6.2*(value/255-.5)));
+      r=curve(r)+30*light+14*skin;g=curve(g)+13*light+4*skin;b=curve(b)-27*skin;
+    }else if(grade==='noir'){
+      const silver=clamp((l-.5)*355+128+18*light);
+      r=silver;g=silver;b=silver;
+    }
+    data[i]=clamp(r);data[i+1]=clamp(g);data[i+2]=clamp(b);
+  }
+  context.putImageData(pixels,0,0);
+  if(grade==='neon'){
+    // Screen a softly blurred copy for luminous signs and headlights.
+    context.save();context.globalCompositeOperation='screen';context.globalAlpha=.22;
+    context.filter=`blur(${Math.max(3,layer.width*.007)}px)`;
+    context.drawImage(layer,0,0);context.restore();
+  }
+  cached.set(grade,layer);return layer;
+}
 
 export function panelRects(layout, w, h) {
   const gap = Math.round(Math.min(w, h) * 0.012);
@@ -40,17 +92,9 @@ function drawPanel(ctx, rect, panel, grade) {
     const scale=Math.max(w/photo.naturalWidth,h/photo.naturalHeight)*(panel.zoom||1);
     const dw=photo.naturalWidth*scale,dh=photo.naturalHeight*scale;
     const cx=x+w/2+(panel.panX||0)*w,cy=y+h/2+(panel.panY||0)*h;
-    ctx.filter=GRADE_FILTERS[panel.grade||grade]||'none';
-    ctx.drawImage(photo,cx-dw/2,cy-dh/2,dw,dh);ctx.filter='none';
-    tintPanel(ctx,x,y,w,h,panel.grade||grade);
+    ctx.drawImage(gradedPhoto(photo,panel.grade||grade),cx-dw/2,cy-dh/2,dw,dh);
   } else drawPlaceholder(ctx,x,y,w,h);
   ctx.restore();
-}
-function tintPanel(ctx,x,y,w,h,grade){
-  const color={sunset:'rgba(244,101,119,.19)',neon:'rgba(44,196,219,.13)',noir:'rgba(0,0,0,.12)',golden:'rgba(255,184,76,.16)'}[grade];
-  ctx.fillStyle=color||'transparent';ctx.fillRect(x,y,w,h);
-  if(grade==='sunset'){const g=ctx.createLinearGradient(x,y+h*.4,x+w,y+h);g.addColorStop(0,'rgba(255,75,124,0)');g.addColorStop(1,'rgba(247,126,52,.37)');ctx.fillStyle=g;ctx.fillRect(x,y,w,h);}
-  if(grade==='golden'){const g=ctx.createRadialGradient(x+w*.7,y+h*.12,0,x+w*.7,y+h*.12,w*.9);g.addColorStop(0,'rgba(255,230,155,.3)');g.addColorStop(1,'rgba(255,203,92,0)');ctx.fillStyle=g;ctx.fillRect(x,y,w,h);}
 }
 function drawPlaceholder(ctx,x,y,w,h){ctx.fillStyle='#34273a';ctx.fillRect(x,y,w,h);ctx.strokeStyle='#61516a';ctx.lineWidth=2;ctx.strokeRect(x+12,y+12,w-24,h-24);ctx.fillStyle='#9b8da2';ctx.textAlign='center';ctx.font=`700 ${Math.min(w,h)*.06}px system-ui`;ctx.fillText('DROP PHOTO',x+w/2,y+h/2);}
 

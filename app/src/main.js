@@ -1,14 +1,16 @@
 // Editor state, file handling, interactions, and PNG export.
 import { drawCover, LAYOUTS, GRADES, panelRects } from './cover.js';
 import { runShot } from './shots.js';
+import { SAMPLE_NAMES, panelSamples } from './photos.js';
 const canvas=document.getElementById('cover'),ctx=canvas.getContext('2d');
 const $=id=>document.getElementById(id);
 const state={layout:'classic',grade:'sunset',panels:[],photos:[],selected:0,texture:true,title:'SUNSET HEIST',subtitle:'VICE CITY • EST. 2026',tagline:'NO RULES AFTER DARK'};
 let activePhoto=null,drag=null;
-const sampleNames=['boulevard','pier','neon'];
+const sampleNames=SAMPLE_NAMES;
+let samplesReady;
 
 function setStatus(message){$('status').textContent=message;}
-function resizePanels(){const old=state.panels;state.panels=panelRects(state.layout,1000,1000).map((_,i)=>old[i]||{photo:null,zoom:1,panX:0,panY:0,grade:''});state.selected=Math.min(state.selected,state.panels.length-1);renderPanelControls();redraw();}
+function resizePanels(){const old=state.panels;state.panels=panelRects(state.layout,1000,1000).map((_,i)=>old[i]||{photo:null,zoom:1,panX:0,panY:0,grade:''});const unused=state.photos.filter(photo=>sampleNames.includes(photo.name)&&!state.panels.some(panel=>panel.photo===photo.image));for(const panel of state.panels){if(!panel.photo&&unused.length){const photo=unused.shift();panel.photo=photo.image;panel.name=photo.name;}}state.selected=Math.min(state.selected,state.panels.length-1);renderPanelControls();redraw();}
 function redraw(){state.title=$('titleInput').value;state.subtitle=$('subtitleInput').value;state.tagline=$('taglineInput').value;state.texture=$('texture').checked;drawCover(canvas,state);}
 function renderLayoutButtons(){
   $('layouts').innerHTML='';for(const layout of LAYOUTS){const button=document.createElement('button');button.type='button';button.className='layout-button'+(layout.id===state.layout?' active':'');button.innerHTML=`<span class="mini ${layout.id}">${'<b></b>'.repeat(layout.count)}</span><span>${layout.label}</span>`;button.addEventListener('click',()=>{state.layout=layout.id;renderLayoutButtons();resizePanels();});$('layouts').append(button);}
@@ -29,13 +31,19 @@ function pointerDown(event){const index=pickPanel(event.clientX,event.clientY);i
 function pointerMove(event){if(!drag)return;const dx=(event.clientX-drag.x)/canvas.clientWidth,dy=(event.clientY-drag.y)/canvas.clientHeight;if(Math.abs(dx)+Math.abs(dy)>.002)drag.moved=true;if(drag.moved){drag.panel.panX+=dx;drag.panel.panY+=dy;drag.x=event.clientX;drag.y=event.clientY;redraw();}}
 function pointerUp(){if(!drag)return;if(!drag.moved&&activePhoto)assignPhoto(state.selected,activePhoto);drag=null;}
 function exportPng(size){const [w,h]=size.split('x').map(Number),output=document.createElement('canvas');output.width=w;output.height=h;drawCover(output,state);output.toBlob(blob=>{if(!blob){setStatus('PNG export failed.');return;}const link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download=`vice-panels-${size}.png`;link.click();setTimeout(()=>URL.revokeObjectURL(link.href),1000);setStatus(`Saved vice-panels-${size}.png`);},'image/png');}
-async function loadSample(name,caption){if(!sampleNames.includes(name))name='pier';const src=`./samples/${name}.jpg`;const image=await loadImage(src);let photo=state.photos.find(item=>item.name===name);if(!photo)photo=addImage(image,name,src);state.panels.forEach((panel,index)=>{if(index===0||!panel.photo)panel.photo=image;});activePhoto=photo;$('titleInput').value=caption.toUpperCase();renderThumbs();redraw();}
+async function loadSample(name,caption,explicit=[]){
+  await samplesReady;
+  const names=panelSamples(state.panels.length,name,explicit);
+  state.panels.forEach((panel,index)=>{const photo=state.photos.find(item=>item.name===names[index]);Object.assign(panel,{photo:photo?.image||null,name:photo?.name||'',zoom:1,panX:0,panY:0});});
+  activePhoto=state.photos.find(photo=>photo.name===names[0])||null;
+  $('titleInput').value=caption.toUpperCase();renderThumbs();renderPanelControls();redraw();
+}
 function setLayout(layout){if(LAYOUTS.some(item=>item.id===layout)){state.layout=layout;renderLayoutButtons();resizePanels();}}
 function setGrade(grade){const aliases={vice:'sunset',sunset:'sunset',neon:'neon',noir:'noir',golden:'golden'};state.grade=aliases[grade]||'sunset';renderGradeButtons();redraw();}
 function setSize(w,h){canvas.width=w;canvas.height=h;$('canvasDimensions').textContent=`${w} × ${h}`;redraw();}
 
 renderGradeButtons();renderLayoutButtons();resizePanels();
-for(const name of sampleNames){loadImage(`./samples/${name}.jpg`).then(image=>{addImage(image,name,`./samples/${name}.jpg`);if(name==='pier'){state.panels[0].photo=image;redraw();}}).catch(()=>{});}
+samplesReady=Promise.all(sampleNames.map(async name=>{const src=`./samples/${name}.jpg`;const image=await loadImage(src);return {image,name,src};})).then(photos=>{state.photos.push(...photos);renderThumbs();});
 $('photoUpload').addEventListener('change',async event=>{for(const file of event.target.files){if(!file.type.startsWith('image/'))continue;const src=URL.createObjectURL(file);try{const image=await loadImage(src);const photo=addImage(image,file.name,src);assignPhoto(state.selected,photo);}catch{URL.revokeObjectURL(src);setStatus(`Could not load ${file.name}.`);}}event.target.value='';});
 $('zoom').addEventListener('input',event=>{const panel=state.panels[state.selected];if(panel){panel.zoom=Number(event.target.value);$('zoomValue').value=`${panel.zoom.toFixed(1)}×`;redraw();}});
 $('panelGrade').addEventListener('change',event=>{const panel=state.panels[state.selected];if(panel){panel.grade=event.target.value;redraw();}});
@@ -43,4 +51,4 @@ $('panelGrade').addEventListener('change',event=>{const panel=state.panels[state
 canvas.addEventListener('pointerdown',pointerDown);canvas.addEventListener('pointermove',pointerMove);canvas.addEventListener('pointerup',pointerUp);canvas.addEventListener('pointercancel',pointerUp);
 canvas.addEventListener('dragover',event=>event.preventDefault());canvas.addEventListener('drop',async event=>{event.preventDefault();const index=pickPanel(event.clientX,event.clientY),file=event.dataTransfer.files[0];if(index<0||!file)return;state.selected=index;renderPanelControls();const src=URL.createObjectURL(file);try{const image=await loadImage(src);assignPhoto(index,addImage(image,file.name,src));}catch{setStatus('Could not load dropped image.');}});
 document.querySelectorAll('[data-size]').forEach(button=>button.addEventListener('click',()=>exportPng(button.dataset.size)));
-const shotQuery=new URLSearchParams(location.search);if(shotQuery.has('shot'))runShot(shotQuery.get('shot'),shotQuery,{loadSample,setLayout,setGrade,setSize});else redraw();
+const shotQuery=new URLSearchParams(location.search);if(shotQuery.has('shot'))runShot(shotQuery.get('shot'),shotQuery,{loadSample,setLayout,setGrade,setSize});else loadSample(shotQuery.get('photo')||'pier','Sunset Heist',(shotQuery.get('photos')||'').split(','));

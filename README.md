@@ -22,7 +22,7 @@ Choose Classic (large left hero with four right panels), Hero Strip (large upper
 
 The four grades are Vice Sunset (pink and orange warmth), Neon Night (cyan and magenta contrast), Palm Noir (hard monochrome contrast), and Golden Hour (warm gold haze). The optional cover finish adds halftone dots, grain, and a vignette. Title, subtitle band, and tagline are drawn into the canvas so they are part of every export. Export renders directly at 1080 × 1080, 1080 × 1350, or 1920 × 1080.
 
-Sample photos live in `app/samples/`. `tools/make_sample.py` creates the original 1200 × 900 neon street sample using Python Pillow.
+Sample photos live in `app/samples/`. `tools/make_sample.py` creates the original 1200 × 900 neon street, coast, and motel scenes using Python Pillow. The two extra scenes let Classic fill all five panels without repeats. Automatic assignment starts with the primary photo in panel 1, then uses each remaining sample once. The `photos=neon,boulevard,...` query parameter overrides panel assignments in order; explicit assignments and manual editor choices may repeat images. Sample loading finishes before shot readiness is signaled.
 
 ## Licence
 
