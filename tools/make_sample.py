@@ -110,6 +110,17 @@ d.polygon([(901, 714), (940, 711), (938, 721), (900, 724)], fill=(204, 250, 255)
 d.line((667, 767, 933, 744), fill=(56, 100, 127), width=2)
 d.polygon([(724, 750), (856, 736), (856, 751), (728, 766)], fill=(2, 5, 12))
 # A modest bloom keeps the drawing crisp while softening luminous edges.
+# Long mirrored colour streaks make the boulevard pavement read as wet.
+mirror = Image.new('RGBA', (W, H), (0, 0, 0, 0)); mr = ImageDraw.Draw(mirror)
+for ax, color in [(190, (239, 38, 143, 100)), (350, (43, 190, 224, 100)),
+                  (830, (231, 51, 149, 105)), (1030, (42, 205, 231, 100))]:
+    for _ in range(65):
+        yy = rng.randrange(610, H); t = (yy-590)/310
+        xx = 600+(ax-600)*(.2+t)+rng.gauss(0, 22*t)
+        half = rng.uniform(4, 44)*t
+        mr.line((xx-half, yy, xx+half, yy+rng.randrange(4, 23)), fill=color, width=rng.choice([2, 4, 6]))
+mirror = mirror.filter(ImageFilter.GaussianBlur(4))
+im = Image.alpha_composite(im.convert('RGBA'), mirror).convert('RGB')
 im = Image.blend(im, im.filter(ImageFilter.GaussianBlur(5)), .08)
 OUT.parent.mkdir(parents=True, exist_ok=True)
 for quality in range(91, 59, -3):
@@ -119,11 +130,58 @@ for quality in range(91, 59, -3):
 assert OUT.stat().st_size <= 130*1024, 'Sample exceeds size budget'
 print(f'Wrote {OUT} ({W}x{H}, {OUT.stat().st_size} bytes)')
 
+# Atmospheric finishing helpers for the three illustrated scenes.
+def atmosphere(scene, horizon, sky, sunbox, waterline=None):
+    """Layer soft light, cloud forms and distance haze into a scene."""
+    from PIL import ImageChops
+    light = Image.new('RGBA', scene.size, (0, 0, 0, 0))
+    ld = ImageDraw.Draw(light)
+    sx = (sunbox[0] + sunbox[2]) / 2
+    sy = (sunbox[1] + sunbox[3]) / 2
+    ld.ellipse((sx-190, sy-190, sx+190, sy+190), fill=(*sky, 150))
+    light = light.filter(ImageFilter.GaussianBlur(72))
+    scene = Image.alpha_composite(scene.convert('RGBA'), light).convert('RGB')
+    clouds = Image.new('RGBA', scene.size, (0, 0, 0, 0)); cd = ImageDraw.Draw(clouds)
+    for cx, cy, rx, ry in [(140, horizon-78, 180, 27), (410, horizon-112, 150, 23),
+                           (750, horizon-65, 210, 31), (1040, horizon-126, 165, 25)]:
+        col = (*tuple(min(255, int(c*.7+95)) for c in sky), 58)
+        for j in range(7):
+            ox = rng.randrange(-rx//2, rx//2); oy = rng.randrange(-ry//2, ry//2)
+            cd.ellipse((cx+ox-rx//3, cy+oy-ry//2, cx+ox+rx//3, cy+oy+ry//2), fill=col)
+    clouds = clouds.filter(ImageFilter.GaussianBlur(19))
+    scene = Image.alpha_composite(scene.convert('RGBA'), clouds).convert('RGB')
+    # Wash the distant skyline toward the sky, retaining strong foreground contrast.
+    haze = Image.new('RGBA', scene.size, (0, 0, 0, 0)); hd = ImageDraw.Draw(haze)
+    hd.rectangle((0, horizon-45, W, horizon+115), fill=(*sky, 48))
+    scene = Image.alpha_composite(scene.convert('RGBA'), haze.filter(ImageFilter.GaussianBlur(30))).convert('RGB')
+    return scene
+
 # Two additional original scenes let the five-panel Classic layout stay unique.
 def save_scene(scene, name):
     path = OUT.with_name(f'{name}.jpg')
-    scene.save(path, 'JPEG', quality=88, optimize=True)
+    scene = finish_print(scene)
+    scene.save(path, 'JPEG', quality=90, optimize=True)
     print(f'Wrote {path} ({path.stat().st_size} bytes)')
+
+def finish_print(scene):
+    """A restrained, reproducible photographic print treatment."""
+    from PIL import ImageEnhance, ImageOps
+    import numpy as np
+    rgb = np.asarray(scene.convert('RGB'), dtype=np.float32)
+    h, w = rgb.shape[:2]
+    yy, xx = np.mgrid[0:h, 0:w]
+    # Gentle S curve around middle gray.
+    z = rgb / 255.0
+    rgb = 255.0 * (z*z*(3-2*z)*.20 + z*.80)
+    # Seeded fine grain, shared seed stream makes output repeatable.
+    grain = np.fromiter((rng.gauss(0, 1.8) for _ in range(w*h)), dtype=np.float32).reshape(h, w)
+    rgb += grain[:, :, None]
+    image = Image.fromarray(np.uint8(np.clip(rgb, 0, 255)), 'RGB')
+    image = ImageEnhance.Color(image).enhance(1.07)
+    nx = (xx-w/2)/(w*.72); ny = (yy-h/2)/(h*.72)
+    vignette = np.clip(1 - .22*(nx*nx+ny*ny), .76, 1.0)
+    arr = np.asarray(image, dtype=np.float32) * vignette[:, :, None]
+    return Image.fromarray(np.uint8(np.clip(arr, 0, 255)), 'RGB')
 
 coast = Image.new('RGB', (W, H)); cd = ImageDraw.Draw(coast)
 for y in range(H):
@@ -155,6 +213,7 @@ for x, y, scale in [(100, 895, 1.35), (1080, 765, .9)]:
         a = k*pi/4
         end = (top[0]+cos(a)*140*scale, top[1]+sin(a)*58*scale+25)
         cd.line([top, ((top[0]+end[0])/2, min(top[1], end[1])-30), end], fill=(24, 58, 58), width=round(9*scale))
+coast = atmosphere(coast, 420, (250, 160, 135), (190, 250, 320, 380), 600)
 save_scene(coast, 'coast')
 
 motel = Image.new('RGB', (W, H)); md = ImageDraw.Draw(motel)
@@ -187,4 +246,11 @@ md.polygon([(185, 766), (887, 729), (1125, 900), (0, 900)], fill=(233, 184, 161)
 md.polygon([(220, 790), (867, 757), (1045, 885), (87, 885)], fill=(26, 135, 150))
 for y in range(795, 887, 15):
     md.line((240-(y-795), y, 864+(y-795)*1.3, y-7), fill=(75, 184, 184), width=2)
+motel = atmosphere(motel, 320, (250, 146, 130), (705, 158, 835, 288), 665)
 save_scene(motel, 'motel')
+
+# The neon scene is built first; apply the same final pass once all helpers exist.
+neon_path = OUT
+neon = Image.open(neon_path).convert('RGB')
+finish_print(neon).save(neon_path, 'JPEG', quality=90, optimize=True)
+print(f'Wrote {neon_path} ({neon_path.stat().st_size} bytes)')
