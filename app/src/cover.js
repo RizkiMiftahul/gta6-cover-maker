@@ -61,6 +61,17 @@ function gradedPhoto(photo, grade) {
     data[i]=clamp(r);data[i+1]=clamp(g);data[i+2]=clamp(b);
   }
   context.putImageData(pixels,0,0);
+  // Add restrained local contrast from a softly blurred luminance plate.
+  const clarity=document.createElement('canvas');clarity.width=layer.width;clarity.height=layer.height;
+  const cc=clarity.getContext('2d');cc.drawImage(layer,0,0);cc.filter=`blur(${Math.max(1,layer.width*.003)}px)`;cc.drawImage(layer,0,0);cc.filter='none';
+  const blurred=cc.getImageData(0,0,layer.width,layer.height).data;
+  const detail=context.getImageData(0,0,layer.width,layer.height),cd=detail.data;
+  for(let i=0;i<cd.length;i+=4){
+    const l=(.2126*cd[i]+.7152*cd[i+1]+.0722*cd[i+2])/255;
+    const mid=Math.max(0,1-Math.abs(l-.5)*1.55),amount=.20*mid;
+    for(let c=0;c<3;c++)cd[i+c]=clamp(cd[i+c]+(cd[i+c]-blurred[i+c])*amount);
+  }
+  context.putImageData(detail,0,0);
   // Coordinate-hashed grain is stable across redraws and exports.
   const grain=context.getImageData(0,0,layer.width,layer.height),gd=grain.data;
   for(let i=0;i<gd.length;i+=4){
@@ -72,8 +83,8 @@ function gradedPhoto(photo, grade) {
   context.putImageData(grain,0,0);
   if(grade==='neon'||grade==='sunset'||grade==='golden'){
     // Screen a softly blurred copy for luminous signs and headlights.
-    context.save();context.globalCompositeOperation='screen';context.globalAlpha=grade==='neon'?.22:.11;
-    context.filter=`blur(${Math.max(3,layer.width*(grade==='neon'?.007:.004))}px)`;
+    context.save();context.globalCompositeOperation='screen';context.globalAlpha=grade==='neon'?.22:.14;
+    context.filter=`blur(${Math.max(3,layer.width*(grade==='neon'?.007:.005))}px)`;
     context.drawImage(layer,0,0);context.restore();
   }
   cached.set(grade,layer);return layer;
@@ -124,6 +135,8 @@ export function drawCover(canvas, state) {
   rects.forEach((r,i)=>drawPanel(ctx,r,state.panels[i],state.grade||'sunset'));
   drawWholeFinish(ctx,w,h,!!state.texture);
   drawLettering(ctx,w,h,state);
+  ctx.save();ctx.strokeStyle='rgba(255,239,218,.92)';ctx.lineWidth=2;ctx.strokeRect(3,3,w-6,h-6);
+  ctx.strokeStyle='rgba(24,17,27,.9)';ctx.lineWidth=1;ctx.strokeRect(7.5,7.5,w-15,h-15);ctx.restore();
   return rects;
 }
 function drawWholeFinish(ctx,w,h,enabled){
@@ -135,13 +148,15 @@ function drawWholeFinish(ctx,w,h,enabled){
 }
 function drawLettering(ctx,w,h,state){
   const mastH=h*.048;ctx.save();ctx.fillStyle='rgba(12,9,17,.46)';ctx.fillRect(0,0,w,mastH);
-  const mastSize=Math.max(9,h*.018);ctx.font=`700 ${mastSize}px system-ui,sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';
-  ctx.fillStyle='rgba(255,255,255,.85)';ctx.fillText('V I C E  P A N E L S',w/2,mastH*.52);
+  const mastSize=Math.max(9,h*.018);ctx.font=`700 ${mastSize}px system-ui,sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.letterSpacing=`${Math.max(1,h*.002)}px`;
+  ctx.fillStyle='rgba(255,255,255,.85)';ctx.fillText('✦  V I C E  P A N E L S  ✦',w/2,mastH*.52);ctx.letterSpacing='0px';
   const ruleY=mastH*.52,ruleEnd=w*.36;ctx.strokeStyle='rgba(255,255,255,.55)';ctx.lineWidth=Math.max(1,h*.0012);
   ctx.beginPath();ctx.moveTo(w*.08,ruleY);ctx.lineTo(w*.34,ruleY);ctx.moveTo(w*.66,ruleY);ctx.lineTo(w*.92,ruleY);ctx.stroke();ctx.restore();
   const title=(state.title||'').trim().toUpperCase();
   if(title){let size=h*.125;ctx.textAlign='center';ctx.textBaseline='middle';ctx.font=`1000 ${size}px Impact, "Arial Narrow", system-ui, sans-serif`;while(ctx.measureText(title).width>w*.91&&size>10){size*=.94;ctx.font=`1000 ${size}px Impact, "Arial Narrow", system-ui, sans-serif`;}
-    const y=h*.805;ctx.save();ctx.lineJoin='round';ctx.shadowColor='rgba(0,0,0,.8)';ctx.shadowBlur=size*.23;ctx.shadowOffsetY=size*.08;ctx.strokeStyle='#120f15';ctx.lineWidth=size*.17;ctx.strokeText(title,w/2,y,w*.93);ctx.shadowColor='transparent';
+    const y=h*.805;ctx.save();ctx.lineJoin='round';ctx.shadowColor='rgba(0,0,0,.8)';ctx.shadowBlur=size*.23;ctx.shadowOffsetY=size*.08;
+    ctx.strokeStyle='#e65c91';ctx.lineWidth=size*.205;ctx.strokeText(title,w/2+1,y+1,w*.93);
+    ctx.strokeStyle='#120f15';ctx.lineWidth=size*.17;ctx.strokeText(title,w/2,y,w*.93);ctx.shadowColor='transparent';
     const titleFill=ctx.createLinearGradient(0,y-size*.55,0,y+size*.55);titleFill.addColorStop(0,'#ffffff');titleFill.addColorStop(.48,'#ffe3f1');titleFill.addColorStop(1,'#b8adb0');ctx.fillStyle=titleFill;ctx.fillText(title,w/2,y,w*.93);ctx.restore();}
   const subtitle=(state.subtitle||'').trim();if(subtitle){const bandH=h*.055, y=h*.88;const band=ctx.createLinearGradient(w*.06,y,w*.94,y);band.addColorStop(0,'#d92d92');band.addColorStop(1,'#f58a42');ctx.fillStyle=band;ctx.fillRect(w*.06,y,w*.88,bandH);ctx.fillStyle='#fff';ctx.font=`900 ${bandH*.48}px system-ui, sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(subtitle.toUpperCase(),w/2,y+bandH/2,w*.82);}
   const tag=(state.tagline||'').trim();if(tag){ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle='rgba(255,255,255,.9)';ctx.font=`800 ${h*.021}px system-ui,sans-serif`;ctx.fillText(tag.toUpperCase(),w/2,h*.963,w*.9);}

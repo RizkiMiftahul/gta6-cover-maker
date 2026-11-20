@@ -1,6 +1,8 @@
 // Vice Panels is an offline GTA-style cover maker with four layouts, four colour grades, and bundled sample images.
 // Its static app runs in a desktop browser without network requests or libraries. This entrypoint packages app/ and
 // screenshots/ and writes the make.fun dossier to /output.
+// Round 6 samples use double-resolution painting, layered fractal skies, and dense, scene-specific detail.
+// A seeded photographic print finish adds grain, micro-contrast, warm highlights, teal shadows, and edge colour.
 //
 // Serve it locally with `node serve.ts`, then open http://localhost:8080.
 // Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for /output:
