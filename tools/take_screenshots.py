@@ -63,15 +63,22 @@ def main():
                         page.goto(BASE_URL + shot['query'].lstrip('/'), wait_until='load', timeout=30000)
                         page.wait_for_function('window.__shotReady === true', timeout=30000)
                         target = output_dir / shot['name']
-                        page.screenshot(path=str(target), type='jpeg', quality=88)
-                        if target.stat().st_size > 250000:
-                            quality = 82
-                            while target.stat().st_size > 260000 and quality >= 20:
+                        page.screenshot(path=str(target), type='jpeg', quality=82)
+                        with Image.open(target) as image:
+                            if max(image.size) > 1280:
+                                scale = 1280 / max(image.size)
+                                image.resize(
+                                    (round(image.width * scale), round(image.height * scale)),
+                                    Image.Resampling.LANCZOS,
+                                ).save(target, format='JPEG', quality=78, optimize=True)
+                        if target.stat().st_size > 240000:
+                            quality = 74
+                            while target.stat().st_size > 262144 and quality >= 20:
                                 with Image.open(target) as image:
                                     image.convert('RGB').save(
                                         target, format='JPEG', quality=quality, optimize=True
                                     )
-                                quality -= 5
+                                quality -= 6
                         if target.stat().st_size > 262144:
                             raise RuntimeError(
                                 f'{target.name} exceeds 262144 bytes after recompression '
@@ -92,7 +99,8 @@ def main():
 
     for shot in shots:
         path = output_dir / shot['name']
-        print(f'{path.name}: {path.stat().st_size} bytes')
+        with Image.open(path) as image:
+            print(f'{path.name}: {image.width}x{image.height}, {path.stat().st_size} bytes')
 
 
 if __name__ == '__main__':
